@@ -7,7 +7,7 @@ from wand.image import Image as WandImage
 from wand.color import Color
 # import rembg
 import logging
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 import json
 
 logger = logging.getLogger(__name__)
@@ -25,12 +25,12 @@ class ImageProcessor:
             'thumbnail': self.create_thumbnail,
             
             # Create operations
-            'remove_bg': self.remove_background,
+            # 'remove_bg': self.remove_background,  # Commented out until rembg is installed
             'create_meme': self.create_meme,
             'upscale': self.upscale_image,
             'add_text': self.add_text_overlay,
             'add_stickers': self.add_stickers,
-            'ai_generate': self.ai_generate,
+            # 'ai_generate': self.ai_generate,  # Placeholder
             
             # Edit operations
             'rotate': self.rotate_image,
@@ -39,28 +39,28 @@ class ImageProcessor:
             'blur_faces': self.blur_faces,
             'adjust_colors': self.adjust_colors,
             'apply_filter': self.apply_filter,
-            'remove_object': self.remove_object,
+            # 'remove_object': self.remove_object,  # Placeholder
             
             # Convert operations
             'convert_format': self.convert_format,
             'jpg_to_png': lambda p,o: self.convert_format(p,o,'png'),
             'png_to_jpg': lambda p,o: self.convert_format(p,o,'jpg'),
             'to_webp': lambda p,o: self.convert_format(p,o,'webp'),
-            'heic_to_jpg': self.heic_to_jpg,
+            # 'heic_to_jpg': self.heic_to_jpg,  # Placeholder
             'create_gif': self.create_gif,
             
             # Security operations
-            'blur_plate': self.blur_license_plate,
-            'add_signature': self.add_signature,
+            # 'blur_plate': self.blur_license_plate,  # Placeholder
+            'add_signature': self.add_watermark,  # Reuse watermark for signature
             'remove_metadata': self.remove_metadata,
-            'encrypt': self.encrypt_image,
-            'decrypt': self.decrypt_image,
+            # 'encrypt': self.encrypt_image,  # Placeholder
+            # 'decrypt': self.decrypt_image,  # Placeholder
             
             # Batch operations
             'batch_resize': self.batch_resize,
             'batch_convert': self.batch_convert,
             'batch_watermark': self.batch_watermark,
-            'batch_rename': self.batch_rename,
+            # 'batch_rename': self.batch_rename,  # Placeholder
         }
     
     def process(self, operation: str, input_path: str, params: Dict) -> Dict:
@@ -180,32 +180,6 @@ class ImageProcessor:
         except Exception as e:
             logger.error(f"Crop failed: {str(e)}")
             return {'success': False, 'error': str(e)}
-    
-'''    def remove_background(self, input_path: str, params: Dict) -> Dict:
-        """Remove background using AI"""
-        try:
-            output_path = input_path.replace('.', '_nobg.png')
-            
-            # Use rembg for background removal
-            with open(input_path, 'rb') as f:
-                input_data = f.read()
-                output_data = rembg.remove(input_data)
-            
-            with open(output_path, 'wb') as f:
-                f.write(output_data)
-            
-            return {
-                'success': True,
-                'output_path': output_path,
-                'metadata': {
-                    'format': 'PNG with transparency',
-                    'method': 'AI background removal'
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Background removal failed: {str(e)}")
-            return {'success': False, 'error': str(e)} '''
     
     def create_meme(self, input_path: str, params: Dict) -> Dict:
         """Create meme with text overlay"""
@@ -476,38 +450,34 @@ class ImageProcessor:
             logger.error(f"Metadata removal failed: {str(e)}")
             return {'success': False, 'error': str(e)}
     
-    def create_gif(self, input_paths: list, params: Dict) -> Dict:
-        """Create GIF from multiple images"""
+    def create_gif(self, input_path: str, params: Dict) -> Dict:
+        """Create GIF from multiple images (simplified version)"""
         try:
-            output_path = params.get('output_path', 'animation.gif')
+            # This is a simplified version - in practice you'd pass multiple paths
+            output_path = params.get('output_path', input_path.replace('.', '_animated.'))
             duration = int(params.get('duration', 100))  # ms per frame
-            loop = int(params.get('loop', 0))  # 0 = infinite
             
-            frames = []
-            for path in input_paths:
-                with Image.open(path) as img:
-                    # Convert to RGB for GIF
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                    frames.append(img)
-            
-            # Save as GIF
-            frames[0].save(
-                output_path,
-                save_all=True,
-                append_images=frames[1:],
-                duration=duration,
-                loop=loop,
-                optimize=True
-            )
+            with Image.open(input_path) as img:
+                # For demo, just save the image as a 1-frame GIF
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                img.save(
+                    output_path,
+                    format='GIF',
+                    save_all=True,
+                    duration=duration,
+                    loop=0,
+                    optimize=True
+                )
             
             return {
                 'success': True,
                 'output_path': output_path,
                 'metadata': {
-                    'frames': len(frames),
+                    'frames': 1,
                     'duration': duration,
-                    'loop': loop
+                    'loop': 0
                 }
             }
             
@@ -515,27 +485,32 @@ class ImageProcessor:
             logger.error(f"GIF creation failed: {str(e)}")
             return {'success': False, 'error': str(e)}
     
-    def batch_resize(self, input_paths: list, params: Dict) -> Dict:
-        """Resize multiple images"""
+    def batch_resize(self, input_path: str, params: Dict) -> Dict:
+        """Batch resize (simplified version - processes single image)"""
         try:
-            results = []
-            for input_path in input_paths:
-                result = self.resize_image(input_path, params)
-                if result['success']:
-                    results.append({
-                        'input': input_path,
-                        'output': result['output_path'],
-                        'metadata': result.get('metadata', {})
-                    })
-            
-            return {
-                'success': True,
-                'results': results,
-                'count': len(results)
-            }
+            # In practice, you'd pass a list of paths
+            return self.resize_image(input_path, params)
             
         except Exception as e:
             logger.error(f"Batch resize failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def batch_convert(self, input_path: str, params: Dict) -> Dict:
+        """Batch convert (simplified version - processes single image)"""
+        try:
+            return self.convert_format(input_path, params)
+            
+        except Exception as e:
+            logger.error(f"Batch convert failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def batch_watermark(self, input_path: str, params: Dict) -> Dict:
+        """Batch watermark (simplified version - processes single image)"""
+        try:
+            return self.add_watermark(input_path, params)
+            
+        except Exception as e:
+            logger.error(f"Batch watermark failed: {str(e)}")
             return {'success': False, 'error': str(e)}
     
     # Additional helper methods for other operations
@@ -675,214 +650,216 @@ class ImageProcessor:
         sepia = np.clip(sepia, 0, 255).astype(np.uint8)
         
         return Image.fromarray(sepia)
-# Add to utils/image_processor.py
-
-def smart_crop(self, input_path, params):
-    """AI-powered smart cropping"""
-    try:
-        aspect_ratio = params.get('aspect_ratio', '1:1')
-        output_path = input_path.replace('.', '_smart_crop.')
-        
-        # Parse aspect ratio
-        if ':' in aspect_ratio:
-            w_ratio, h_ratio = map(int, aspect_ratio.split(':'))
-            target_ratio = w_ratio / h_ratio
-        else:
-            target_ratio = 1.0
-        
-        with Image.open(input_path) as img:
-            # Get image dimensions
-            width, height = img.size
-            current_ratio = width / height
+    
+    def smart_crop(self, input_path: str, params: Dict) -> Dict:
+        """AI-powered smart cropping"""
+        try:
+            aspect_ratio = params.get('aspect_ratio', '1:1')
+            output_path = input_path.replace('.', '_smart_crop.')
             
-            # Calculate crop area
-            if current_ratio > target_ratio:
-                # Image is wider, crop width
-                new_width = int(height * target_ratio)
-                left = (width - new_width) // 2
-                cropped = img.crop((left, 0, left + new_width, height))
+            # Parse aspect ratio
+            if ':' in aspect_ratio:
+                w_ratio, h_ratio = map(int, aspect_ratio.split(':'))
+                target_ratio = w_ratio / h_ratio
             else:
-                # Image is taller, crop height
-                new_height = int(width / target_ratio)
-                top = (height - new_height) // 2
-                cropped = img.crop((0, top, width, top + new_height))
+                target_ratio = 1.0
             
-            cropped.save(output_path)
-            
-            return {
-                'success': True,
-                'output_path': output_path,
-                'metadata': {
-                    'original_dimensions': (width, height),
-                    'new_dimensions': cropped.size,
-                    'aspect_ratio': aspect_ratio
+            with Image.open(input_path) as img:
+                # Get image dimensions
+                width, height = img.size
+                current_ratio = width / height
+                
+                # Calculate crop area
+                if current_ratio > target_ratio:
+                    # Image is wider, crop width
+                    new_width = int(height * target_ratio)
+                    left = (width - new_width) // 2
+                    cropped = img.crop((left, 0, left + new_width, height))
+                else:
+                    # Image is taller, crop height
+                    new_height = int(width / target_ratio)
+                    top = (height - new_height) // 2
+                    cropped = img.crop((0, top, width, top + new_height))
+                
+                cropped.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'original_dimensions': (width, height),
+                        'new_dimensions': cropped.size,
+                        'aspect_ratio': aspect_ratio
+                    }
                 }
-            }
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-def create_thumbnail(self, input_path, params):
-    """Create thumbnail"""
-    try:
-        width = params.get('width', 150)
-        height = params.get('height', 150)
-        output_path = input_path.replace('.', '_thumb.')
-        
-        with Image.open(input_path) as img:
-            img.thumbnail((width, height), Image.Resampling.LANCZOS)
-            img.save(output_path)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def create_thumbnail(self, input_path: str, params: Dict) -> Dict:
+        """Create thumbnail"""
+        try:
+            width = int(params.get('width', 150))
+            height = int(params.get('height', 150))
+            output_path = input_path.replace('.', '_thumb.')
             
-            return {
-                'success': True,
-                'output_path': output_path,
-                'metadata': {
-                    'dimensions': img.size
+            with Image.open(input_path) as img:
+                img.thumbnail((width, height), Image.Resampling.LANCZOS)
+                img.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'dimensions': img.size
+                    }
                 }
-            }
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-def rotate_image(self, input_path, params):
-    """Rotate image"""
-    try:
-        angle = params.get('angle', 90)
-        output_path = input_path.replace('.', '_rotated.')
-        
-        with Image.open(input_path) as img:
-            rotated = img.rotate(angle, expand=True)
-            rotated.save(output_path)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def rotate_image(self, input_path: str, params: Dict) -> Dict:
+        """Rotate image"""
+        try:
+            angle = int(params.get('angle', 90))
+            output_path = input_path.replace('.', '_rotated.')
             
-            return {
-                'success': True,
-                'output_path': output_path,
-                'metadata': {
-                    'angle': angle,
-                    'dimensions': rotated.size
+            with Image.open(input_path) as img:
+                rotated = img.rotate(angle, expand=True)
+                rotated.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'angle': angle,
+                        'dimensions': rotated.size
+                    }
                 }
-            }
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-def flip_image(self, input_path, params):
-    """Flip image horizontally or vertically"""
-    try:
-        direction = params.get('direction', 'horizontal')
-        output_path = input_path.replace('.', '_flipped.')
-        
-        with Image.open(input_path) as img:
-            if direction == 'horizontal':
-                flipped = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-            else:
-                flipped = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def flip_image(self, input_path: str, params: Dict) -> Dict:
+        """Flip image horizontally or vertically"""
+        try:
+            direction = params.get('direction', 'horizontal')
+            output_path = input_path.replace('.', '_flipped.')
             
-            flipped.save(output_path)
-            
-            return {
-                'success': True,
-                'output_path': output_path,
-                'metadata': {
-                    'direction': direction
+            with Image.open(input_path) as img:
+                if direction == 'horizontal':
+                    flipped = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                else:
+                    flipped = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                
+                flipped.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'direction': direction
+                    }
                 }
-            }
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-def add_text_overlay(self, input_path, params):
-    """Add text overlay to image"""
-    try:
-        text = params.get('text', '')
-        position = params.get('position', 'bottom')
-        font_size = params.get('font_size', 32)
-        color = params.get('color', '#ffffff')
-        output_path = input_path.replace('.', '_text.')
-        
-        with Image.open(input_path) as img:
-            draw = ImageDraw.Draw(img)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def add_text_overlay(self, input_path: str, params: Dict) -> Dict:
+        """Add text overlay to image"""
+        try:
+            text = params.get('text', '')
+            position = params.get('position', 'bottom')
+            font_size = int(params.get('font_size', 32))
+            color = params.get('color', '#ffffff')
+            output_path = input_path.replace('.', '_text.')
             
-            # Load font
-            try:
-                font = ImageFont.truetype("arial.ttf", font_size)
-            except:
-                font = ImageFont.load_default()
-            
-            # Calculate text size
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            
-            # Calculate position
-            if position == 'top':
-                x = (img.width - text_width) // 2
-                y = 10
-            elif position == 'bottom':
-                x = (img.width - text_width) // 2
-                y = img.height - text_height - 10
-            elif position == 'center':
-                x = (img.width - text_width) // 2
-                y = (img.height - text_height) // 2
-            elif position == 'top-left':
-                x, y = 10, 10
-            elif position == 'top-right':
-                x = img.width - text_width - 10
-                y = 10
-            elif position == 'bottom-left':
-                x = 10
-                y = img.height - text_height - 10
-            elif position == 'bottom-right':
-                x = img.width - text_width - 10
-                y = img.height - text_height - 10
-            else:
-                x, y = 10, 10
-            
-            # Convert color string to RGB tuple
-            if color.startswith('#'):
-                color = tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
-            
-            # Draw text with outline
-            outline_color = (0, 0, 0)
-            for offset in [(2,2), (2,-2), (-2,2), (-2,-2)]:
-                draw.text((x + offset[0], y + offset[1]), text, font=font, fill=outline_color)
-            draw.text((x, y), text, font=font, fill=color)
-            
-            img.save(output_path)
-            
-            return {
-                'success': True,
-                'output_path': output_path,
-                'metadata': {
-                    'text': text,
-                    'position': position,
-                    'font_size': font_size
+            with Image.open(input_path) as img:
+                draw = ImageDraw.Draw(img)
+                
+                # Load font
+                try:
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+                
+                # Calculate text size
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                
+                # Calculate position
+                if position == 'top':
+                    x = (img.width - text_width) // 2
+                    y = 10
+                elif position == 'bottom':
+                    x = (img.width - text_width) // 2
+                    y = img.height - text_height - 10
+                elif position == 'center':
+                    x = (img.width - text_width) // 2
+                    y = (img.height - text_height) // 2
+                elif position == 'top-left':
+                    x, y = 10, 10
+                elif position == 'top-right':
+                    x = img.width - text_width - 10
+                    y = 10
+                elif position == 'bottom-left':
+                    x = 10
+                    y = img.height - text_height - 10
+                elif position == 'bottom-right':
+                    x = img.width - text_width - 10
+                    y = img.height - text_height - 10
+                else:
+                    x, y = 10, 10
+                
+                # Convert color string to RGB tuple
+                if color.startswith('#'):
+                    color = tuple(int(color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+                
+                # Draw text with outline
+                outline_color = (0, 0, 0)
+                for offset in [(2,2), (2,-2), (-2,2), (-2,-2)]:
+                    draw.text((x + offset[0], y + offset[1]), text, font=font, fill=outline_color)
+                draw.text((x, y), text, font=font, fill=color)
+                
+                img.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'text': text,
+                        'position': position,
+                        'font_size': font_size
+                    }
                 }
-            }
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
-
-def add_stickers(self, input_path, params):
-    """Add stickers to image"""
-    try:
-        sticker_type = params.get('sticker_type', 'happy')
-        position = params.get('position', 'center')
-        size = params.get('size', 50)
-        output_path = input_path.replace('.', '_stickers.')
-        
-        # Sticker paths (you would have actual sticker images)
-        stickers = {
-            'happy': 'static/stickers/happy.png',
-            'sad': 'static/stickers/sad.png',
-            'cool': 'static/stickers/cool.png',
-            'heart': 'static/stickers/heart.png',
-            'star': 'static/stickers/star.png'
-        }
-        
-        sticker_path = stickers.get(sticker_type)
-        if not sticker_path or not os.path.exists(sticker_path):
-            return {'success': False, 'error': f'Sticker {sticker_type} not found'}
-        
-        with Image.open(input_path) as base_img:
-            with Image.open(sticker_path) as sticker:
-                # Resize sticker
-                sticker = sticker.resize((size, size), Image.Resampling.LANCZOS)
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def add_stickers(self, input_path: str, params: Dict) -> Dict:
+        """Add stickers to image"""
+        try:
+            sticker_type = params.get('sticker_type', 'happy')
+            position = params.get('position', 'center')
+            size = int(params.get('size', 50))
+            output_path = input_path.replace('.', '_stickers.')
+            
+            # Since we don't have actual sticker files, create a simple colored circle as a sticker
+            with Image.open(input_path) as base_img:
+                # Create a simple sticker (colored circle)
+                sticker = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(sticker)
+                
+                # Draw different shapes based on sticker type
+                if sticker_type == 'happy':
+                    draw.ellipse([0, 0, size, size], fill=(255, 255, 0, 255))  # Yellow circle
+                    draw.ellipse([size//4, size//4, size//2, size//2], fill=(0, 0, 0, 255))  # Left eye
+                    draw.ellipse([size//2, size//4, 3*size//4, size//2], fill=(0, 0, 0, 255))  # Right eye
+                    draw.arc([size//4, size//2, 3*size//4, 3*size//4], 0, 180, fill=(0, 0, 0, 255), width=2)  # Smile
+                elif sticker_type == 'heart':
+                    # Simple heart shape
+                    draw.ellipse([0, 0, size//2, size//2], fill=(255, 0, 0, 255))
+                    draw.ellipse([size//2, 0, size, size//2], fill=(255, 0, 0, 255))
+                    draw.polygon([(0, size//3), (size, size//3), (size//2, size)], fill=(255, 0, 0, 255))
+                else:
+                    # Default star
+                    draw.regular_polygon((size//2, size//2), 5, size//2, fill=(255, 215, 0, 255))
                 
                 # Calculate position
                 if position == 'center':
@@ -902,12 +879,8 @@ def add_stickers(self, input_path, params):
                 else:
                     x, y = 10, 10
                 
-                # Paste sticker (handle transparency)
-                if sticker.mode == 'RGBA':
-                    base_img.paste(sticker, (x, y), sticker)
-                else:
-                    base_img.paste(sticker, (x, y))
-                
+                # Paste sticker
+                base_img.paste(sticker, (x, y), sticker)
                 base_img.save(output_path)
                 
                 return {
@@ -919,5 +892,5 @@ def add_stickers(self, input_path, params):
                         'size': size
                     }
                 }
-    except Exception as e:
-        return {'success': False, 'error': str(e)}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
