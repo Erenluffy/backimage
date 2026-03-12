@@ -1,0 +1,30 @@
+[Unit]
+Description=ImageLab Studio Backend Service
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/imagelab-backend
+Environment="PATH=/var/www/imagelab-backend/venv/bin"
+EnvironmentFile=/var/www/imagelab-backend/.env
+ExecStart=/var/www/imagelab-backend/venv/bin/gunicorn -c config/gunicorn.conf.py app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s TERM $MAINPID
+Restart=always
+RestartSec=10
+
+# Security hardening
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/www/imagelab-backend/static/uploads /var/www/imagelab-backend/logs
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.targets
