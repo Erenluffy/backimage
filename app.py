@@ -8,18 +8,19 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-# Configure detailed logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('app.log')
+        logging.FileHandler("app.log")
     ]
 )
+
 logger = logging.getLogger(__name__)
 
-# Import custom modules with error handling
+# Import modules safely
 try:
     from config import Config
     logger.info("✓ Config module loaded")
@@ -30,7 +31,7 @@ except Exception as e:
 try:
     from utils.image_processor import ImageProcessor
     from utils.file_handler import FileHandler
-    from utils.validators import validate_image, validate_params
+    from utils.validators import validate_image
     from utils.security import SecurityManager
     logger.info("✓ Utils modules loaded")
 except Exception as e:
@@ -49,258 +50,212 @@ except Exception as e:
     logger.error(f"✗ Failed to load route blueprints: {str(e)}")
     raise
 
-# Initialize Flask app
+# Initialize Flask
 app = Flask(__name__)
 
-# Load configuration
+# Load config
 try:
     app.config.from_object(Config)
     logger.info("✓ Configuration loaded")
-except Exception as e:
-    logger.error(f"✗ Failed to load configuration: {str(e)}")
-    # Set default config if file missing
-    app.config['DEBUG'] = False
-    app.config['UPLOAD_FOLDER'] = 'static/uploads'
-    app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
-    app.config['ALLOWED_EXTENSIONS'] = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'heic'}
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
-    logger.warning("Using default configuration")
+except Exception:
+    logger.warning("Using fallback configuration")
 
-# Configure CORS - Allow all origins for development, restrict in production
+    app.config["DEBUG"] = False
+    app.config["UPLOAD_FOLDER"] = "static/uploads"
+    app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+    app.config["ALLOWED_EXTENSIONS"] = {"png","jpg","jpeg","gif","webp","bmp","tiff","heic"}
+    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY","dev-secret-key")
+
+# Enable CORS
 CORS(app, resources={
     r"/api/*": {
-        "origins": [
-            "http://localhost:5500",
-            "http://127.0.0.1:5500",
-            "https://your-frontend-domain.com",  # Add your frontend domain
-            "*"  # Remove this in production
-        ],
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "origins": "*",
+        "methods": ["GET","POST","PUT","DELETE","OPTIONS"],
+        "allow_headers": ["Content-Type","Authorization"]
     }
 })
 
-# Create required directories
+# Ensure directories exist
 def create_directories():
-    """Create necessary directories if they don't exist"""
     dirs = [
-        app.config.get('UPLOAD_FOLDER', 'static/uploads'),
-        'logs',
-        'static'
+        app.config.get("UPLOAD_FOLDER","static/uploads"),
+        "logs",
+        "static"
     ]
-    
-    for dir_path in dirs:
+
+    for d in dirs:
         try:
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
-            logger.info(f"✓ Directory ensured: {dir_path}")
+            Path(d).mkdir(parents=True, exist_ok=True)
+            logger.info(f"✓ Directory ensured: {d}")
         except Exception as e:
-            logger.error(f"✗ Failed to create directory {dir_path}: {str(e)}")
+            logger.error(f"Directory error {d}: {e}")
 
 create_directories()
 
-# Initialize utilities with error handling
-try:
-    upload_folder = app.config.get('UPLOAD_FOLDER', 'static/uploads')
-    image_processor = ImageProcessor()
-    file_handler = FileHandler(upload_folder)
-    security_manager = SecurityManager()
-    logger.info("✓ Utilities initialized successfully")
-except Exception as e:
-    logger.error(f"✗ Failed to initialize utilities: {str(e)}")
-    raise
+# Initialize utilities
+upload_folder = app.config.get("UPLOAD_FOLDER","static/uploads")
 
-# Register blueprints with error handling
-try:
-    app.register_blueprint(optimize_bp, url_prefix='/api/optimize')
-    app.register_blueprint(create_bp, url_prefix='/api/create')
-    app.register_blueprint(edit_bp, url_prefix='/api/edit')
-    app.register_blueprint(convert_bp, url_prefix='/api/convert')
-    app.register_blueprint(security_bp, url_prefix='/api/security')
-    app.register_blueprint(batch_bp, url_prefix='/api/batch')
-    logger.info("✓ All blueprints registered successfully")
-except Exception as e:
-    logger.error(f"✗ Failed to register blueprints: {str(e)}")
-    raise
+image_processor = ImageProcessor()
+file_handler = FileHandler(upload_folder)
+security_manager = SecurityManager()
+
+logger.info("✓ Utilities initialized")
+
+# Register blueprints (WITHOUT prefix duplication)
+app.register_blueprint(optimize_bp)
+app.register_blueprint(create_bp)
+app.register_blueprint(edit_bp)
+app.register_blueprint(convert_bp)
+app.register_blueprint(security_bp)
+app.register_blueprint(batch_bp)
+
+logger.info("✓ Blueprints registered")
 
 # Startup check
-@app.before_first_request
 def startup_check():
-    """Run startup checks before first request"""
-    logger.info("="*60)
-    logger.info("ImageLab Backend Starting...")
-    logger.info(f"Environment: {os.environ.get('FLASK_ENV', 'production')}")
-    logger.info(f"Debug mode: {app.config.get('DEBUG', False)}")
-    logger.info(f"Port: {os.environ.get('PORT', '5000')}")
+
+    logger.info("="*50)
+    logger.info("ImageLab Backend Starting")
+
+    logger.info(f"Environment: {os.environ.get('FLASK_ENV','production')}")
     logger.info(f"Upload folder: {app.config.get('UPLOAD_FOLDER')}")
-    logger.info(f"Max content length: {app.config.get('MAX_CONTENT_LENGTH')} bytes")
-    logger.info(f"Allowed extensions: {app.config.get('ALLOWED_EXTENSIONS')}")
-    
-    # Check if upload directory is writable
-    upload_dir = app.config.get('UPLOAD_FOLDER', 'static/uploads')
-    test_file = Path(upload_dir) / 'test.txt'
+    logger.info(f"Max upload size: {app.config.get('MAX_CONTENT_LENGTH')}")
+
+    upload_dir = Path(app.config.get("UPLOAD_FOLDER"))
+
     try:
-        test_file.write_text('test')
+        test_file = upload_dir / "test.txt"
+        test_file.write_text("test")
         test_file.unlink()
-        logger.info(f"✓ Upload directory is writable: {upload_dir}")
+        logger.info("✓ Upload folder writable")
     except Exception as e:
-        logger.error(f"✗ Upload directory not writable: {str(e)}")
-    
-    logger.info("="*60)
+        logger.error(f"Upload folder error: {e}")
+
+    logger.info("="*50)
+
+# Run startup checks (Flask 3 compatible)
+with app.app_context():
+    startup_check()
 
 # Root endpoint
-@app.route('/')
+@app.route("/")
 def index():
-    """Serve the main HTML page or API info"""
+
     try:
-        return render_template('index.html')
+        return render_template("index.html")
     except:
         return jsonify({
-            'name': 'ImageLab API',
-            'version': '1.0.0',
-            'status': 'running',
-            'endpoints': [
-                '/api/health',
-                '/api/process',
-                '/api/optimize/*',
-                '/api/create/*',
-                '/api/edit/*',
-                '/api/convert/*',
-                '/api/security/*',
-                '/api/batch/*'
-            ]
+            "name":"ImageLab API",
+            "version":"1.0.0",
+            "status":"running"
         })
 
-# Health check endpoint
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint for Render"""
+# Health check
+@app.route("/api/health")
+def health():
+
     return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'version': '1.0.0',
-        'environment': os.environ.get('FLASK_ENV', 'production'),
-        'debug': app.config.get('DEBUG', False)
+        "status":"healthy",
+        "time":datetime.now().isoformat()
     })
 
-# Simple test endpoint
-@app.route('/api/test', methods=['GET'])
+# Test endpoint
+@app.route("/api/test")
 def test():
-    """Simple test endpoint"""
+
     return jsonify({
-        'message': 'API is working!',
-        'method': 'GET',
-        'time': datetime.now().isoformat()
+        "message":"API working",
+        "time":datetime.now().isoformat()
     })
 
-# Main processing endpoint
-@app.route('/api/process', methods=['POST', 'OPTIONS'])
+# Image processing endpoint
+@app.route("/api/process", methods=["POST","OPTIONS"])
 def process_image():
-    """Generic image processing endpoint"""
-    # Handle preflight OPTIONS request
-    if request.method == 'OPTIONS':
-        return '', 200
-        
+
+    if request.method == "OPTIONS":
+        return "",200
+
+    file_id = None
+
     try:
-        # Validate request
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image provided'}), 400
-        
-        file = request.files['image']
-        operation = request.form.get('operation', '')
+
+        if "image" not in request.files:
+            return jsonify({"error":"No image uploaded"}),400
+
+        file = request.files["image"]
+        operation = request.form.get("operation","")
         params = request.form.to_dict()
-        
-        # Log request
-        logger.info(f"Processing request: operation={operation}, file={file.filename}")
-        
-        # Validate file
-        is_valid, error = validate_image(file)
-        if not is_valid:
-            logger.warning(f"File validation failed: {error}")
-            return jsonify({'error': error}), 400
-        
-        # Save uploaded file
+
+        logger.info(f"Request: {operation} | file={file.filename}")
+
+        valid,error = validate_image(file)
+
+        if not valid:
+            return jsonify({"error":error}),400
+
         file_id = str(uuid.uuid4())
-        input_path = file_handler.save_upload(file, file_id)
-        logger.info(f"File saved: {input_path}")
-        
-        # Process image based on operation
-        result = image_processor.process(operation, input_path, params)
-        
-        if result['success']:
-            logger.info(f"Processing successful for {file.filename}")
-            # Return processed image
-            filename = secure_filename(file.filename)
-            return send_file(
-                result['output_path'],
-                as_attachment=True,
-                download_name=f"processed_{filename}",
-                mimetype='image/jpeg'
-            )
-        else:
-            logger.error(f"Processing failed: {result.get('error')}")
-            return jsonify({'error': result.get('error', 'Processing failed')}), 500
-            
+
+        input_path = file_handler.save_upload(file,file_id)
+
+        result = image_processor.process(operation,input_path,params)
+
+        if not result["success"]:
+            return jsonify({"error":result.get("error","processing failed")}),500
+
+        filename = secure_filename(file.filename)
+
+        return send_file(
+            result["output_path"],
+            as_attachment=True,
+            download_name=f"processed_{filename}",
+            mimetype="image/jpeg"
+        )
+
     except Exception as e:
-        logger.error(f"Processing error: {str(e)}", exc_info=True)
-        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
+
+        logger.error(f"Processing error: {e}",exc_info=True)
+
+        return jsonify({"error":"internal server error"}),500
+
     finally:
-        # Cleanup temporary files
-        try:
-            file_handler.cleanup(file_id)
-        except:
-            pass
+
+        if file_id:
+            try:
+                file_handler.cleanup(file_id)
+            except:
+                pass
+
 
 # Error handlers
 @app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        'error': 'Endpoint not found',
-        'available_endpoints': [
-            '/',
-            '/api/health',
-            '/api/test',
-            '/api/process',
-            '/api/optimize/*',
-            '/api/create/*',
-            '/api/edit/*',
-            '/api/convert/*',
-            '/api/security/*',
-            '/api/batch/*'
-        ]
-    }), 404
+def not_found(e):
+    return jsonify({"error":"endpoint not found"}),404
 
 @app.errorhandler(500)
-def internal_error(error):
-    logger.error(f"Internal server error: {str(error)}")
-    return jsonify({'error': 'Internal server error'}), 500
+def internal(e):
+    logger.error(str(e))
+    return jsonify({"error":"internal server error"}),500
 
 @app.errorhandler(413)
-def too_large(error):
-    return jsonify({'error': 'File too large. Maximum size is 50MB'}), 413
+def too_large(e):
+    return jsonify({"error":"file too large (50MB max)"}),413
 
 @app.errorhandler(405)
-def method_not_allowed(error):
-    return jsonify({'error': 'Method not allowed'}), 405
+def method_not_allowed(e):
+    return jsonify({"error":"method not allowed"}),405
 
-# Graceful shutdown
-@app.teardown_appcontext
-def cleanup(error):
-    """Clean up after request"""
-    pass
 
-if __name__ == '__main__':
-    # Get port from environment variable for Render
-    port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    
-    logger.info(f"Starting Flask server on port {port} (debug={debug})")
+# Local run
+if __name__ == "__main__":
+
+    port = int(os.environ.get("PORT",5000))
+    debug = os.environ.get("FLASK_DEBUG","false").lower()=="true"
+
+    logger.info(f"Starting server on port {port}")
+
     app.run(
-        host='0.0.0.0',
+        host="0.0.0.0",
         port=port,
         debug=debug,
         threaded=True
     )
-else:
-    # For gunicorn, get the port from environment
-    port = int(os.environ.get('PORT', 5000))
-    logger.info(f"App loaded by gunicorn, will listen on port {port}")
