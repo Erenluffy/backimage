@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 from wand.image import Image as WandImage
 from wand.color import Color
-import rembg
+# import rembg
 import logging
 from typing import Dict, Any, Tuple
 import json
@@ -181,7 +181,7 @@ class ImageProcessor:
             logger.error(f"Crop failed: {str(e)}")
             return {'success': False, 'error': str(e)}
     
-    def remove_background(self, input_path: str, params: Dict) -> Dict:
+'''    def remove_background(self, input_path: str, params: Dict) -> Dict:
         """Remove background using AI"""
         try:
             output_path = input_path.replace('.', '_nobg.png')
@@ -205,7 +205,7 @@ class ImageProcessor:
             
         except Exception as e:
             logger.error(f"Background removal failed: {str(e)}")
-            return {'success': False, 'error': str(e)}
+            return {'success': False, 'error': str(e)} '''
     
     def create_meme(self, input_path: str, params: Dict) -> Dict:
         """Create meme with text overlay"""
