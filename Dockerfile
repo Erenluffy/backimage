@@ -1,56 +1,103 @@
+# -----------------------------
+# Base Image
+# -----------------------------
 FROM python:3.11-slim
 
-# Install system dependencies including OpenCV requirements
-RUN apt-get update && apt-get install -y \
-    # OpenCV dependencies
-    libgl1-mesa-glx \
+# Prevent Python from writing .pyc files
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Prevent Python from buffering stdout/stderr
+ENV PYTHONUNBUFFERED=1
+
+# -----------------------------
+# Install system dependencies
+# -----------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # OpenCV runtime
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     libgomp1 \
-    # Image processing dependencies
+    \
+    # Image processing
     imagemagick \
     libmagic-dev \
     libmagickwand-dev \
+    \
     # Build tools
     gcc \
     g++ \
-    # Other utilities
+    \
+    # Utilities
     curl \
+    \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# -----------------------------
 # Create non-root user
-RUN useradd -m -u 1000 imagelab && \
-    mkdir -p /app && \
-    chown -R imagelab:imagelab /app
+# -----------------------------
+RUN useradd -m -u 1000 imagelab
 
+# -----------------------------
 # Set working directory
+# -----------------------------
 WORKDIR /app
 
-# Copy requirements first for better caching
+# -----------------------------
+# Install Python dependencies
+# -----------------------------
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# -----------------------------
 # Copy application
-COPY --chown=imagelab:imagelab . .
+# -----------------------------
+COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/static/uploads /app/logs && \
-    chown -R imagelab:imagelab /app/static /app/logs
+# -----------------------------
+# Create necessary folders
+# -----------------------------
+RUN mkdir -p \
+    /app/static/uploads \
+    /app/logs
 
-# Copy ImageMagick security policy
+# -----------------------------
+# ImageMagick Security Policy
+# -----------------------------
 COPY config/imagick-policy.xml /etc/ImageMagick-6/policy.xml
 
+# -----------------------------
+# Set ownership
+# -----------------------------
+RUN chown -R imagelab:imagelab /app
+
+# -----------------------------
 # Switch to non-root user
+# -----------------------------
 USER imagelab
 
-# Health check
+# -----------------------------
+# Healthcheck
+# -----------------------------
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/api/health || exit 1
+CMD curl -f http://localhost:5000/api/health || exit 1
 
+# -----------------------------
 # Expose port
+# -----------------------------
 EXPOSE 5000
 
-# Run application
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--threads", "2", "--timeout", "120", "app:app"]
+# -----------------------------
+# Start Gunicorn
+# -----------------------------
+CMD ["gunicorn", \
+"--bind", "0.0.0.0:5000", \
+"--workers", "4", \
+"--threads", "2", \
+"--timeout", "120", \
+"app:app"]
