@@ -1,0 +1,677 @@
+import subprocess
+import os
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
+import numpy as np
+import cv2
+from wand.image import Image as WandImage
+from wand.color import Color
+import rembg
+import logging
+from typing import Dict, Any, Tuple
+import json
+
+logger = logging.getLogger(__name__)
+
+class ImageProcessor:
+    def __init__(self):
+        self.supported_operations = {
+            # Optimize operations
+            'compress': self.compress_image,
+            'resize': self.resize_image,
+            'crop': self.crop_image,
+            'optimize_web': self.optimize_for_web,
+            'reduce_colors': self.reduce_colors,
+            'smart_crop': self.smart_crop,
+            'thumbnail': self.create_thumbnail,
+            
+            # Create operations
+            'remove_bg': self.remove_background,
+            'create_meme': self.create_meme,
+            'upscale': self.upscale_image,
+            'add_text': self.add_text_overlay,
+            'add_stickers': self.add_stickers,
+            'ai_generate': self.ai_generate,
+            
+            # Edit operations
+            'rotate': self.rotate_image,
+            'flip': self.flip_image,
+            'watermark': self.add_watermark,
+            'blur_faces': self.blur_faces,
+            'adjust_colors': self.adjust_colors,
+            'apply_filter': self.apply_filter,
+            'remove_object': self.remove_object,
+            
+            # Convert operations
+            'convert_format': self.convert_format,
+            'jpg_to_png': lambda p,o: self.convert_format(p,o,'png'),
+            'png_to_jpg': lambda p,o: self.convert_format(p,o,'jpg'),
+            'to_webp': lambda p,o: self.convert_format(p,o,'webp'),
+            'heic_to_jpg': self.heic_to_jpg,
+            'create_gif': self.create_gif,
+            
+            # Security operations
+            'blur_plate': self.blur_license_plate,
+            'add_signature': self.add_signature,
+            'remove_metadata': self.remove_metadata,
+            'encrypt': self.encrypt_image,
+            'decrypt': self.decrypt_image,
+            
+            # Batch operations
+            'batch_resize': self.batch_resize,
+            'batch_convert': self.batch_convert,
+            'batch_watermark': self.batch_watermark,
+            'batch_rename': self.batch_rename,
+        }
+    
+    def process(self, operation: str, input_path: str, params: Dict) -> Dict:
+        """Process image with specified operation"""
+        try:
+            if operation not in self.supported_operations:
+                return {'success': False, 'error': f'Unsupported operation: {operation}'}
+            
+            processor = self.supported_operations[operation]
+            result = processor(input_path, params)
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Processing failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def compress_image(self, input_path: str, params: Dict) -> Dict:
+        """Compress image with specified quality"""
+        try:
+            quality = int(params.get('quality', 80))
+            output_path = input_path.replace('.', '_compressed.')
+            
+            with Image.open(input_path) as img:
+                # Convert to RGB if necessary
+                if img.mode in ('RGBA', 'P'):
+                    rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                    rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                    img = rgb_img
+                
+                # Save with compression
+                img.save(output_path, 'JPEG', quality=quality, optimize=True)
+                
+                # Calculate compression ratio
+                original_size = os.path.getsize(input_path)
+                compressed_size = os.path.getsize(output_path)
+                ratio = (1 - compressed_size / original_size) * 100
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'original_size': original_size,
+                        'compressed_size': compressed_size,
+                        'compression_ratio': f"{ratio:.1f}%",
+                        'quality': quality
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Compression failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def resize_image(self, input_path: str, params: Dict) -> Dict:
+        """Resize image to specified dimensions"""
+        try:
+            width = int(params.get('width', 0))
+            height = int(params.get('height', 0))
+            maintain_aspect = params.get('maintain_aspect', 'true').lower() == 'true'
+            output_path = input_path.replace('.', '_resized.')
+            
+            with Image.open(input_path) as img:
+                original_size = img.size
+                
+                if maintain_aspect:
+                    # Calculate new dimensions maintaining aspect ratio
+                    img.thumbnail((width, height) if width and height else (width, height), Image.Resampling.LANCZOS)
+                else:
+                    # Resize to exact dimensions
+                    img = img.resize((width, height), Image.Resampling.LANCZOS)
+                
+                # Save resized image
+                img.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'original_dimensions': original_size,
+                        'new_dimensions': img.size,
+                        'maintain_aspect': maintain_aspect
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Resize failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def crop_image(self, input_path: str, params: Dict) -> Dict:
+        """Crop image to specified region"""
+        try:
+            x = int(params.get('x', 0))
+            y = int(params.get('y', 0))
+            width = int(params.get('width', 0))
+            height = int(params.get('height', 0))
+            output_path = input_path.replace('.', '_cropped.')
+            
+            with Image.open(input_path) as img:
+                # Validate crop region
+                if x + width > img.width or y + height > img.height:
+                    return {'success': False, 'error': 'Crop region exceeds image dimensions'}
+                
+                # Crop image
+                cropped = img.crop((x, y, x + width, y + height))
+                cropped.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'original_dimensions': img.size,
+                        'crop_region': {'x': x, 'y': y, 'width': width, 'height': height},
+                        'new_dimensions': cropped.size
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Crop failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def remove_background(self, input_path: str, params: Dict) -> Dict:
+        """Remove background using AI"""
+        try:
+            output_path = input_path.replace('.', '_nobg.png')
+            
+            # Use rembg for background removal
+            with open(input_path, 'rb') as f:
+                input_data = f.read()
+                output_data = rembg.remove(input_data)
+            
+            with open(output_path, 'wb') as f:
+                f.write(output_data)
+            
+            return {
+                'success': True,
+                'output_path': output_path,
+                'metadata': {
+                    'format': 'PNG with transparency',
+                    'method': 'AI background removal'
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Background removal failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def create_meme(self, input_path: str, params: Dict) -> Dict:
+        """Create meme with text overlay"""
+        try:
+            top_text = params.get('top_text', '')
+            bottom_text = params.get('bottom_text', '')
+            output_path = input_path.replace('.', '_meme.')
+            
+            with Image.open(input_path) as img:
+                draw = ImageDraw.Draw(img)
+                
+                # Load font (adjust size based on image dimensions)
+                font_size = int(min(img.width, img.height) * 0.1)
+                try:
+                    font = ImageFont.truetype("arial.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+                
+                # Add top text
+                if top_text:
+                    bbox = draw.textbbox((0, 0), top_text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    x = (img.width - text_width) // 2
+                    y = 10
+                    
+                    # Draw text outline
+                    for offset in [(2,2), (2,-2), (-2,2), (-2,-2)]:
+                        draw.text((x + offset[0], y + offset[1]), top_text, font=font, fill='black')
+                    draw.text((x, y), top_text, font=font, fill='white')
+                
+                # Add bottom text
+                if bottom_text:
+                    bbox = draw.textbbox((0, 0), bottom_text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    x = (img.width - text_width) // 2
+                    y = img.height - text_height - 10
+                    
+                    for offset in [(2,2), (2,-2), (-2,2), (-2,-2)]:
+                        draw.text((x + offset[0], y + offset[1]), bottom_text, font=font, fill='black')
+                    draw.text((x, y), bottom_text, font=font, fill='white')
+                
+                img.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'top_text': top_text,
+                        'bottom_text': bottom_text,
+                        'font_size': font_size
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Meme creation failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def upscale_image(self, input_path: str, params: Dict) -> Dict:
+        """Upscale image using AI"""
+        try:
+            scale_factor = float(params.get('scale_factor', 2.0))
+            output_path = input_path.replace('.', '_upscaled.')
+            
+            # Use OpenCV for basic upscaling
+            img = cv2.imread(input_path)
+            height, width = img.shape[:2]
+            new_dimensions = (int(width * scale_factor), int(height * scale_factor))
+            
+            # Use different interpolation methods based on scale factor
+            if scale_factor <= 2:
+                interpolation = cv2.INTER_CUBIC
+            else:
+                interpolation = cv2.INTER_LANCZOS4
+            
+            upscaled = cv2.resize(img, new_dimensions, interpolation=interpolation)
+            cv2.imwrite(output_path, upscaled)
+            
+            return {
+                'success': True,
+                'output_path': output_path,
+                'metadata': {
+                    'original_dimensions': (width, height),
+                    'new_dimensions': new_dimensions,
+                    'scale_factor': scale_factor
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Upscaling failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def add_watermark(self, input_path: str, params: Dict) -> Dict:
+        """Add text or image watermark"""
+        try:
+            watermark_type = params.get('watermark_type', 'text')
+            watermark_text = params.get('watermark_text', 'ImageLab Studio')
+            opacity = int(params.get('opacity', 50)) / 100
+            position = params.get('position', 'bottom-right')
+            output_path = input_path.replace('.', '_watermarked.')
+            
+            with Image.open(input_path).convert('RGBA') as base:
+                # Create watermark layer
+                watermark = Image.new('RGBA', base.size, (0, 0, 0, 0))
+                draw = ImageDraw.Draw(watermark)
+                
+                if watermark_type == 'text':
+                    # Add text watermark
+                    font_size = int(min(base.width, base.height) * 0.05)
+                    try:
+                        font = ImageFont.truetype("arial.ttf", font_size)
+                    except:
+                        font = ImageFont.load_default()
+                    
+                    # Calculate text position
+                    bbox = draw.textbbox((0, 0), watermark_text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    
+                    if position == 'top-left':
+                        xy = (10, 10)
+                    elif position == 'top-right':
+                        xy = (base.width - text_width - 10, 10)
+                    elif position == 'bottom-left':
+                        xy = (10, base.height - text_height - 10)
+                    elif position == 'bottom-right':
+                        xy = (base.width - text_width - 10, base.height - text_height - 10)
+                    else:  # center
+                        xy = ((base.width - text_width) // 2, (base.height - text_height) // 2)
+                    
+                    # Draw text with opacity
+                    draw.text(xy, watermark_text, font=font, fill=(255, 255, 255, int(255 * opacity)))
+                
+                # Composite watermark
+                watermarked = Image.alpha_composite(base, watermark)
+                
+                # Convert back to RGB if saving as JPEG
+                if output_path.lower().endswith(('.jpg', '.jpeg')):
+                    watermarked = watermarked.convert('RGB')
+                
+                watermarked.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'watermark_type': watermark_type,
+                        'position': position,
+                        'opacity': opacity
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Watermark addition failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def blur_faces(self, input_path: str, params: Dict) -> Dict:
+        """Detect and blur faces in image"""
+        try:
+            output_path = input_path.replace('.', '_blurred.')
+            
+            # Load pre-trained face detector
+            face_cascade = cv2.CascadeClassifier(
+                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            )
+            
+            # Read image
+            img = cv2.imread(input_path)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Detect faces
+            faces = face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(30, 30)
+            )
+            
+            # Blur each face
+            for (x, y, w, h) in faces:
+                # Extract face region
+                face_roi = img[y:y+h, x:x+w]
+                
+                # Apply Gaussian blur
+                blurred_face = cv2.GaussianBlur(face_roi, (51, 51), 30)
+                
+                # Replace face with blurred version
+                img[y:y+h, x:x+w] = blurred_face
+            
+            # Save result
+            cv2.imwrite(output_path, img)
+            
+            return {
+                'success': True,
+                'output_path': output_path,
+                'metadata': {
+                    'faces_detected': len(faces),
+                    'blur_intensity': 'high'
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Face blur failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def convert_format(self, input_path: str, params: Dict, target_format: str = None) -> Dict:
+        """Convert image to different format"""
+        try:
+            if not target_format:
+                target_format = params.get('format', 'jpg')
+            
+            output_path = input_path.rsplit('.', 1)[0] + f'_converted.{target_format}'
+            
+            with Image.open(input_path) as img:
+                # Handle special cases
+                if target_format.lower() == 'jpg' or target_format.lower() == 'jpeg':
+                    if img.mode in ('RGBA', 'P'):
+                        # Convert to RGB for JPEG
+                        rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                        rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                        img = rgb_img
+                elif target_format.lower() == 'png':
+                    if img.mode != 'RGBA':
+                        img = img.convert('RGBA')
+                
+                # Save in target format
+                img.save(output_path, optimize=True)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'original_format': input_path.split('.')[-1].upper(),
+                        'target_format': target_format.upper(),
+                        'dimensions': img.size
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Format conversion failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def remove_metadata(self, input_path: str, params: Dict) -> Dict:
+        """Remove all metadata from image"""
+        try:
+            output_path = input_path.replace('.', '_clean.')
+            
+            with Image.open(input_path) as img:
+                # Create new image without metadata
+                data = list(img.getdata())
+                clean_img = Image.new(img.mode, img.size)
+                clean_img.putdata(data)
+                
+                # Save without metadata
+                clean_img.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'removed': True,
+                        'original_metadata': 'stripped'
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Metadata removal failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def create_gif(self, input_paths: list, params: Dict) -> Dict:
+        """Create GIF from multiple images"""
+        try:
+            output_path = params.get('output_path', 'animation.gif')
+            duration = int(params.get('duration', 100))  # ms per frame
+            loop = int(params.get('loop', 0))  # 0 = infinite
+            
+            frames = []
+            for path in input_paths:
+                with Image.open(path) as img:
+                    # Convert to RGB for GIF
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    frames.append(img)
+            
+            # Save as GIF
+            frames[0].save(
+                output_path,
+                save_all=True,
+                append_images=frames[1:],
+                duration=duration,
+                loop=loop,
+                optimize=True
+            )
+            
+            return {
+                'success': True,
+                'output_path': output_path,
+                'metadata': {
+                    'frames': len(frames),
+                    'duration': duration,
+                    'loop': loop
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"GIF creation failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def batch_resize(self, input_paths: list, params: Dict) -> Dict:
+        """Resize multiple images"""
+        try:
+            results = []
+            for input_path in input_paths:
+                result = self.resize_image(input_path, params)
+                if result['success']:
+                    results.append({
+                        'input': input_path,
+                        'output': result['output_path'],
+                        'metadata': result.get('metadata', {})
+                    })
+            
+            return {
+                'success': True,
+                'results': results,
+                'count': len(results)
+            }
+            
+        except Exception as e:
+            logger.error(f"Batch resize failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    # Additional helper methods for other operations
+    def optimize_for_web(self, input_path: str, params: Dict) -> Dict:
+        """Optimize image specifically for web use"""
+        params['quality'] = 75
+        params['width'] = 1920  # Max width for web
+        params['maintain_aspect'] = 'true'
+        
+        # First resize if needed
+        resize_result = self.resize_image(input_path, params)
+        if resize_result['success']:
+            # Then compress
+            return self.compress_image(resize_result['output_path'], params)
+        return resize_result
+    
+    def reduce_colors(self, input_path: str, params: Dict) -> Dict:
+        """Reduce color palette of image"""
+        try:
+            colors = int(params.get('colors', 64))
+            output_path = input_path.replace('.', '_reduced.')
+            
+            with Image.open(input_path) as img:
+                # Convert to palette mode with reduced colors
+                if img.mode == 'RGBA':
+                    # Handle transparency
+                    img = img.convert('RGBA')
+                    # Create a white background
+                    background = Image.new('RGBA', img.size, (255, 255, 255, 255))
+                    img = Image.alpha_composite(background, img)
+                
+                # Reduce colors
+                reduced = img.convert('P', palette=Image.Palette.ADAPTIVE, colors=colors)
+                reduced = reduced.convert('RGB')  # Convert back for saving
+                reduced.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'original_colors': 'full',
+                        'reduced_colors': colors
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Color reduction failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def adjust_colors(self, input_path: str, params: Dict) -> Dict:
+        """Adjust image colors (brightness, contrast, saturation)"""
+        try:
+            brightness = float(params.get('brightness', 1.0))
+            contrast = float(params.get('contrast', 1.0))
+            saturation = float(params.get('saturation', 1.0))
+            output_path = input_path.replace('.', '_adjusted.')
+            
+            with Image.open(input_path) as img:
+                # Apply adjustments
+                if brightness != 1.0:
+                    enhancer = ImageEnhance.Brightness(img)
+                    img = enhancer.enhance(brightness)
+                
+                if contrast != 1.0:
+                    enhancer = ImageEnhance.Contrast(img)
+                    img = enhancer.enhance(contrast)
+                
+                if saturation != 1.0:
+                    enhancer = ImageEnhance.Color(img)
+                    img = enhancer.enhance(saturation)
+                
+                img.save(output_path)
+                
+                return {
+                    'success': True,
+                    'output_path': output_path,
+                    'metadata': {
+                        'brightness': brightness,
+                        'contrast': contrast,
+                        'saturation': saturation
+                    }
+                }
+                
+        except Exception as e:
+            logger.error(f"Color adjustment failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def apply_filter(self, input_path: str, params: Dict) -> Dict:
+        """Apply various filters to image"""
+        try:
+            filter_type = params.get('filter', 'blur')
+            intensity = float(params.get('intensity', 1.0))
+            output_path = input_path.replace('.', f'_{filter_type}.')
+            
+            with Image.open(input_path) as img:
+                filters = {
+                    'blur': lambda i: i.filter(ImageFilter.GaussianBlur(radius=intensity * 2)),
+                    'sharpen': lambda i: i.filter(ImageFilter.UnsharpMask(radius=intensity * 2)),
+                    'edge_enhance': lambda i: i.filter(ImageFilter.EDGE_ENHANCE_MORE),
+                    'emboss': lambda i: i.filter(ImageFilter.EMBOSS),
+                    'contour': lambda i: i.filter(ImageFilter.CONTOUR),
+                    'smooth': lambda i: i.filter(ImageFilter.SMOOTH_MORE),
+                    'grayscale': lambda i: i.convert('L').convert('RGB'),
+                    'sepia': self.apply_sepia
+                }
+                
+                if filter_type in filters:
+                    img = filters[filter_type](img)
+                    img.save(output_path)
+                    
+                    return {
+                        'success': True,
+                        'output_path': output_path,
+                        'metadata': {
+                            'filter': filter_type,
+                            'intensity': intensity
+                        }
+                    }
+                else:
+                    return {'success': False, 'error': f'Unknown filter: {filter_type}'}
+                    
+        except Exception as e:
+            logger.error(f"Filter application failed: {str(e)}")
+            return {'success': False, 'error': str(e)}
+    
+    def apply_sepia(self, img):
+        """Apply sepia filter"""
+        # Convert to numpy array for processing
+        img_array = np.array(img.convert('RGB'))
+        
+        # Apply sepia matrix
+        sepia_matrix = np.array([[0.393, 0.769, 0.189],
+                                 [0.349, 0.686, 0.168],
+                                 [0.272, 0.534, 0.131]])
+        
+        sepia = img_array @ sepia_matrix.T
+        sepia = np.clip(sepia, 0, 255).astype(np.uint8)
+        
+        return Image.fromarray(sepia)
