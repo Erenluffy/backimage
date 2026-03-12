@@ -23,9 +23,8 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symbolic links for python
-RUN ln -s /usr/bin/python3.11 /usr/bin/python && \
-    ln -s /usr/bin/pip3 /usr/bin/pip
+# Python and pip are already in PATH, no need to create symlinks
+# Ubuntu already has python3 and pip3 commands
 
 # Create a non-root user
 RUN useradd -m -u 1000 imagelab
@@ -34,7 +33,7 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
 COPY . .
