@@ -79,25 +79,94 @@ class ImageProcessor:
             return {'success': False, 'error': str(e)}
     
     def compress_image(self, input_path: str, params: Dict) -> Dict:
-        """Compress image with specified quality"""
+        """Compress image with specified quality and options"""
         try:
             quality = int(params.get('quality', 80))
-            output_path = input_path.replace('.', '_compressed.')
+            target_size = params.get('target_size')  # Target size in KB
+            target_size_mb = params.get('target_size_mb')  # Target size in MB
+            output_format = params.get('format', 'same')
+            max_width = params.get('max_width')
+            max_height = params.get('max_height')
+            preserve_metadata = params.get('preserve_metadata', 'true').lower() == 'true'
+            optimize_for = params.get('optimize_for', 'balanced')  # 'web', 'email', 'print', 'balanced'
+            compression_method = params.get('compression_method', 'standard')  # 'standard', 'progressive', 'lossless'
+            
+            # Generate output path
+            base, ext = os.path.splitext(input_path)
+            
+            # Handle format conversion
+            if output_format != 'same':
+                ext = f'.{output_format}'
+            output_path = f"{base}_compressed{ext}"
             
             with Image.open(input_path) as img:
-                # Convert to RGB if necessary
-                if img.mode in ('RGBA', 'P'):
+                original_mode = img.mode
+                original_size = os.path.getsize(input_path)
+                
+                # Apply resize if specified
+                if max_width or max_height:
+                    img = self._resize_with_constraints(img, max_width, max_height)
+                
+                # Convert mode based on output format
+                if output_format in ['jpg', 'jpeg'] and img.mode in ('RGBA', 'P'):
+                    # Create white background for transparency
                     rgb_img = Image.new('RGB', img.size, (255, 255, 255))
                     rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
                     img = rgb_img
+                elif output_format == 'png' and img.mode != 'RGBA':
+                    img = img.convert('RGBA')
                 
-                # Save with compression
-                img.save(output_path, 'JPEG', quality=quality, optimize=True)
+                # Optimize based on target use
+                if optimize_for == 'web':
+                    quality = min(quality, 75)
+                    if not max_width:
+                        img = self._resize_with_constraints(img, 1920, 1080)
+                elif optimize_for == 'email':
+                    quality = min(quality, 60)
+                    if not max_width:
+                        img = self._resize_with_constraints(img, 1024, 768)
+                elif optimize_for == 'print':
+                    quality = max(quality, 90)
                 
-                # Calculate compression ratio
-                original_size = os.path.getsize(input_path)
+                # Handle target file size
+                if target_size or target_size_mb:
+                    target_bytes = (float(target_size) * 1024) if target_size else (float(target_size_mb) * 1024 * 1024)
+                    quality = self._find_quality_for_target_size(img, target_bytes, output_path, ext[1:])
+                
+                # Save with compression options
+                save_kwargs = {
+                    'format': ext[1:].upper(),
+                    'optimize': True
+                }
+                
+                if ext[1:].lower() in ['jpg', 'jpeg']:
+                    save_kwargs['quality'] = quality
+                    save_kwargs['progressive'] = (compression_method == 'progressive')
+                    if not preserve_metadata:
+                        save_kwargs['save_all'] = False
+                        
+                elif ext[1:].lower() == 'png':
+                    if compression_method == 'lossless':
+                        save_kwargs['compress_level'] = 9
+                        save_kwargs['optimize'] = True
+                    else:
+                        # For PNG, we'll use Pillow's optimize which reduces file size
+                        save_kwargs['compress_level'] = 6
+                        
+                elif ext[1:].lower() == 'webp':
+                    save_kwargs['quality'] = quality
+                    save_kwargs['method'] = 6  # Slowest/best compression
+                
+                # Remove metadata if not preserving
+                if not preserve_metadata:
+                    img.info.clear()
+                
+                # Save the image
+                img.save(output_path, **save_kwargs)
+                
+                # Calculate compression stats
                 compressed_size = os.path.getsize(output_path)
-                ratio = (1 - compressed_size / original_size) * 100
+                savings = ((original_size - compressed_size) / original_size) * 100
                 
                 return {
                     'success': True,
@@ -105,8 +174,12 @@ class ImageProcessor:
                     'metadata': {
                         'original_size': original_size,
                         'compressed_size': compressed_size,
-                        'compression_ratio': f"{ratio:.1f}%",
-                        'quality': quality
+                        'savings_percentage': round(savings, 2),
+                        'quality': quality,
+                        'format': ext[1:].upper(),
+                        'dimensions': img.size,
+                        'compression_method': compression_method,
+                        'optimize_for': optimize_for
                     }
                 }
                 
@@ -114,6 +187,59 @@ class ImageProcessor:
             logger.error(f"Compression failed: {str(e)}")
             return {'success': False, 'error': str(e)}
     
+    def _resize_with_constraints(self, img, max_width, max_height):
+        """Resize image while maintaining aspect ratio"""
+        if not max_width and not max_height:
+            return img
+        
+        width, height = img.size
+        
+        if max_width and max_height:
+            # Resize to fit within both constraints
+            img.thumbnail((int(max_width), int(max_height)), Image.Resampling.LANCZOS)
+        elif max_width:
+            # Resize based on width
+            ratio = int(max_width) / width
+            new_height = int(height * ratio)
+            img = img.resize((int(max_width), new_height), Image.Resampling.LANCZOS)
+        elif max_height:
+            # Resize based on height
+            ratio = int(max_height) / height
+            new_width = int(width * ratio)
+            img = img.resize((new_width, int(max_height)), Image.Resampling.LANCZOS)
+        
+        return img
+    
+    def _find_quality_for_target_size(self, img, target_bytes, output_path, format):
+        """Find optimal quality setting to achieve target file size"""
+        if format.lower() not in ['jpg', 'jpeg', 'webp']:
+            return 80  # Only JPEG and WebP support quality adjustment
+        
+        # Binary search for optimal quality
+        low, high = 1, 100
+        best_quality = 80
+        
+        for _ in range(7):  # 7 iterations gives good precision
+            mid = (low + high) // 2
+            temp_path = output_path.replace('.', f'_temp_{mid}.')
+            
+            save_kwargs = {
+                'format': format.upper(),
+                'quality': mid,
+                'optimize': True
+            }
+            
+            img.save(temp_path, **save_kwargs)
+            size = os.path.getsize(temp_path)
+            os.remove(temp_path)
+            
+            if size < target_bytes:
+                best_quality = mid
+                low = mid + 1
+            else:
+                high = mid - 1
+        
+        return best_quality
     def resize_image(self, input_path: str, params: Dict) -> Dict:
         """Resize image to specified dimensions"""
         try:
